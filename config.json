@@ -1,0 +1,5 @@
+{
+    "target": "ws://ec2-50-17-71-76.compute-1.amazonaws.com:8080/ws",
+    "clients": 1017,
+    "sleep": "8s"
+}
