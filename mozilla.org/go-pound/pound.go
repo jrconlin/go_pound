@@ -69,24 +69,24 @@ func poundSock(target string, config *Config, cmd chan int, ctrl chan int, id in
 			return err
 		}
 		time.Sleep(duration)
-        select {
-            case cc := <- ctrl:
-                if cc == 0 {
-                    break
-                }
-            default:
-        }
+		select {
+		case cc := <-ctrl:
+			if cc == 0 {
+				break
+			}
+		default:
+		}
 	}
 	log.Printf("INFO : (%d) Shutting down...\n", id)
 	return err
 }
 
 func main() {
-    defer func() {
-        if r := recover(); r != nil {
-            log.Printf("PANIC! %s\n", r)
-        }
-    }()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("PANIC! %s\n", r)
+		}
+	}()
 	configFile := flag.String("config", "config.json", "Config file")
 	flag.Parse()
 
@@ -98,15 +98,15 @@ func main() {
 
 	runtime.GOMAXPROCS(config.Clients)
 
-    chans := make(map[int]chan int)
-    cmd := make(chan int, config.Clients)
+	chans := make(map[int]chan int)
+	cmd := make(chan int, config.Clients)
 
 	// run as many clients as specified
 	totalClients := config.Clients
 	for cli := 0; cli < totalClients; cli++ {
 
-	    ctrl := make(chan int)
-        chans[cli] = ctrl
+		ctrl := make(chan int)
+		chans[cli] = ctrl
 		// open a socket to the Target
 		log.Printf("Spawning %d\n", cli)
 
@@ -118,8 +118,8 @@ func main() {
 	for {
 		select {
 		case x := <-cmd:
-            log.Printf("Exiting %d \n", x)
-            totalClients = runtime.NumGoroutine()
+			log.Printf("Exiting %d \n", x)
+			totalClients = runtime.NumGoroutine()
 		default:
 			if totalClients != lastTot {
 				log.Printf("Info: Active Clients: %d \n", totalClients)
