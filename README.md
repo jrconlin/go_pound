@@ -16,7 +16,9 @@ This requires a config.json file that looks like:
     "sleep": "10s"
     }
 
-:target; the machine to test
-:clients; the number of clients to spawn (note, >13000 go routines can be... problematic.
-:sleep; time to sleep before sending the fake "ping" packet.
+*target* the machine to test
+
+*clients* the number of clients to spawn (note, >13000 go routines can be... problematic.
+
+*sleep* time to sleep before sending the fake "ping" packet.
 
