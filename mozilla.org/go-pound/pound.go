@@ -96,7 +96,8 @@ func main() {
 		return
 	}
 
-	runtime.GOMAXPROCS(config.Clients)
+	// Limit to number of available CPUs
+	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	chans := make(map[int]chan int)
 	cmd := make(chan int, config.Clients)
