@@ -96,8 +96,15 @@ func main() {
 		return
 	}
 
-	// Limit to number of available CPUs
-	runtime.GOMAXPROCS(runtime.NumCPU())
+	// This is an odd value full of voodoo.
+    // The docs say that this should match the number of CPUs, only if you
+    // set it to 1, go appears to not actually spawn any threads. (None of
+    // the poundSock() calls are made.) If you give it something too excessive,
+    // the scheduler blows chunks. 8 per CPU, while fairly arbitrary, seems
+    // to provide the greatest stability.
+    //
+    // Go is a fun toy, but this is why you don't build hospitals out of lego.
+	runtime.GOMAXPROCS(runtime.NumCPU()*8)
 
 	chans := make(map[int]chan int)
 	cmd := make(chan int, config.Clients)
