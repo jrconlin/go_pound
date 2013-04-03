@@ -42,7 +42,7 @@ func parseConfig(filename string) (config *Config) {
 	return config
 }
 
-func poundSock(target string, config *Config, cmd chan int, ctrl chan int, id int) (err error) {
+func poundSock(target string, config *Config, cmd, ctrl chan int, id int) (err error) {
 	hostname, err := os.Hostname()
 	log.Printf("INFO : (%d) Connecting to %s\n", id, target)
 	ws, err := websocket.Dial(config.Target, "", "http://"+hostname)
@@ -52,7 +52,9 @@ func poundSock(target string, config *Config, cmd chan int, ctrl chan int, id in
 		cmd <- id
 		return err
 	}
+	msg := make([]byte, 512)
 	duration, err := time.ParseDuration(config.Sleep)
+	tc := time.NewTicker(duration)
 	for {
 		_, err = ws.Write([]byte("{\"messageType\":\"ping\"}"))
 		if err != nil {
@@ -61,20 +63,19 @@ func poundSock(target string, config *Config, cmd chan int, ctrl chan int, id in
 			cmd <- id
 			return err
 		}
-		var msg = make([]byte, 512)
-		_, err := ws.Read(msg)
-		if err != nil {
+		msg = msg[:0]
+		if _, err = ws.Read(msg); err != nil {
 			log.Printf("WARN : (%d) Bad response %s\n", id, err.Error())
 			cmd <- id
-			return err
+			return
 		}
-		time.Sleep(duration)
 		select {
 		case cc := <-ctrl:
 			if cc == 0 {
 				break
 			}
-		default:
+		case <-tc.C:
+			continue
 		}
 	}
 	log.Printf("INFO : (%d) Shutting down...\n", id)
@@ -97,14 +98,14 @@ func main() {
 	}
 
 	// This is an odd value full of voodoo.
-    // The docs say that this should match the number of CPUs, only if you
-    // set it to 1, go appears to not actually spawn any threads. (None of
-    // the poundSock() calls are made.) If you give it something too excessive,
-    // the scheduler blows chunks. 8 per CPU, while fairly arbitrary, seems
-    // to provide the greatest stability.
-    //
-    // Go is a fun toy, but this is why you don't build hospitals out of lego.
-	runtime.GOMAXPROCS(runtime.NumCPU()*8)
+	// The docs say that this should match the number of CPUs, only if you
+	// set it to 1, go appears to not actually spawn any threads. (None of
+	// the poundSock() calls are made.) If you give it something too excessive,
+	// the scheduler blows chunks. 8 per CPU, while fairly arbitrary, seems
+	// to provide the greatest stability.
+	//
+	// Go is a fun toy, but this is why you don't build hospitals out of lego.
+	runtime.GOMAXPROCS(runtime.NumCPU() * 8)
 
 	chans := make(map[int]chan int)
 	cmd := make(chan int, config.Clients)
@@ -123,12 +124,13 @@ func main() {
 		}(cli)
 	}
 	lastTot := runtime.NumGoroutine()
+	tc := time.NewTicker(time.Duration(time.Second * 5))
 	for {
 		select {
 		case x := <-cmd:
 			log.Printf("Exiting %d \n", x)
 			totalClients = runtime.NumGoroutine()
-		default:
+		case <-tc.C:
 			if totalClients != lastTot {
 				log.Printf("Info: Active Clients: %d \n", totalClients)
 				lastTot = totalClients
