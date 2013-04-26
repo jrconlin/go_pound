@@ -4,6 +4,8 @@ import (
 	"code.google.com/p/go.net/websocket"
 	"encoding/json"
 	"flag"
+//    "fmt"
+    "math"
 	"log"
 	"os"
 	"runtime"
@@ -43,32 +45,49 @@ func parseConfig(filename string) (config *Config) {
 }
 
 func poundSock(target string, config *Config, cmd, ctrl chan int, id int) (err error) {
-	hostname, err := os.Hostname()
-	log.Printf("INFO : (%d) Connecting to %s\n", id, target)
-	ws, err := websocket.Dial(config.Target, "", "http://"+hostname)
+    defer func() {
+        if r := recover(); r != nil {
+             log.Printf(".")
+        }
+    }()
+	hostname := os.Getenv("HOST")
+    if hostname == "" {
+        hostname = "localhost"
+    }
+    targ := target // + fmt.Sprintf("#id=%d", id)
+	log.Printf("INFO : (%d) Connecting from %s to %s\n", id, "ws://" + hostname, targ)
+	//ws, err := websocket.Dial(targ, "push-notification", targ)
+	ws, err := websocket.Dial(targ, "", targ)
+    err = ws.SetDeadline(time.Now().Add(time.Second * 30))
 	if err != nil {
 		log.Printf("ERROR: (%d) Unable to open websocket: %s\n",
 			id, err.Error())
 		cmd <- id
 		return err
 	}
-	msg := make([]byte, 512)
 	duration, err := time.ParseDuration(config.Sleep)
 	tc := time.NewTicker(duration)
 	for {
-		_, err = ws.Write([]byte("{\"messageType\":\"ping\"}"))
+        err = ws.SetDeadline(time.Now().Add(time.Second * 5))
+		_, err = ws.Write([]byte("{\"messageType\":\"hello\"}"))
 		if err != nil {
 			log.Printf("ERROR: (%d) Unable to write ping to websocket %s\n",
 				id, err.Error())
 			cmd <- id
 			return err
 		}
-		msg = msg[:0]
-		if _, err = ws.Read(msg); err != nil {
-			log.Printf("WARN : (%d) Bad response %s\n", id, err.Error())
-			cmd <- id
-			return
-		}
+
+        // do a raw receive from the socket.
+        // Note: ws.Read doesn't like pulling data.
+		var msg string
+        websocket.Message.Receive(ws, &msg)
+
+		//if _, err = ws.Read(msg); err != nil {
+        //
+		//	log.Printf("WARN : (%d) Bad response %s\n", id, err)
+		//	cmd <- id
+		//	return
+		//}
 		select {
 		case cc := <-ctrl:
 			if cc == 0 {
@@ -112,18 +131,30 @@ func main() {
 
 	// run as many clients as specified
 	totalClients := config.Clients
-	for cli := 0; cli < totalClients; cli++ {
+    gov := time.NewTicker(time.Duration(time.Second * 2))
+    for spawned := 0; spawned < totalClients; {
+        select {
+            case <- gov.C:
+                log.Printf("Spawning %d\n", spawned)
+                if spawned < totalClients {
+                    eggs := int(math.Min(1000, float64(totalClients - spawned)))
+	                for cli := 0; cli < eggs; cli++ {
+                        spawn := spawned + cli
+                		ctrl := make(chan int)
+                		chans[spawn] = ctrl
+                		// open a socket to the Target
+                		log.Printf("Spawning %d\n", spawn)
 
-		ctrl := make(chan int)
-		chans[cli] = ctrl
-		// open a socket to the Target
-		log.Printf("Spawning %d\n", cli)
+                		go func(spawn int) {
+                			poundSock(config.Target, config, cmd, ctrl, spawn)
+                		}(spawn)
+                    }
+                    spawned = spawned + eggs
+                }
+        }
 
-		go func(cli int) {
-			poundSock(config.Target, config, cmd, ctrl, cli)
-		}(cli)
 	}
-	lastTot := runtime.NumGoroutine()
+    gov.Stop()
 	tc := time.NewTicker(time.Duration(time.Second * 5))
 	for {
 		select {
@@ -131,10 +162,7 @@ func main() {
 			log.Printf("Exiting %d \n", x)
 			totalClients = runtime.NumGoroutine()
 		case <-tc.C:
-			if totalClients != lastTot {
-				log.Printf("Info: Active Clients: %d \n", totalClients)
-				lastTot = totalClients
-			}
+		    log.Printf("Info: Active Clients: %d \n", totalClients)
 		}
 	}
 }

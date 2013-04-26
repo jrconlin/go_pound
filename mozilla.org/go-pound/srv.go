@@ -73,7 +73,7 @@ func main() {
 
     http.Handle("/ws", websocket.Handler(pongServer))
     log.Printf("Starting server")
-    err := http.ListenAndServe(":8081", nil)
+    err := http.ListenAndServe(":8080", nil)
     if err != nil {
         panic (err.Error())
     }
