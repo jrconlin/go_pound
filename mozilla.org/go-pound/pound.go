@@ -2,11 +2,13 @@ package main
 
 import (
 	"code.google.com/p/go.net/websocket"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
-//    "fmt"
-    "math"
+	"fmt"
 	"log"
+	"math"
 	"os"
 	"runtime"
 	"time"
@@ -44,21 +46,35 @@ func parseConfig(filename string) (config *Config) {
 	return config
 }
 
+func genToken() (string) {
+	uuid := make([]byte, 16)
+	n, err := rand.Read(uuid)
+	if n != len(uuid) || err != nil {
+		return ""
+	}
+
+	uuid[8] = 0x80
+	uuid[4] = 0x40
+
+	return hex.EncodeToString(uuid)
+}
+
 func poundSock(target string, config *Config, cmd, ctrl chan int, id int) (err error) {
-    defer func() {
-        if r := recover(); r != nil {
-             log.Printf(".")
-        }
-    }()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf(".")
+		}
+	}()
 	hostname := os.Getenv("HOST")
-    if hostname == "" {
-        hostname = "localhost"
-    }
-    targ := target // + fmt.Sprintf("#id=%d", id)
-	log.Printf("INFO : (%d) Connecting from %s to %s\n", id, "ws://" + hostname, targ)
+	if hostname == "" {
+		hostname = "localhost"
+	}
+	targ := target // + fmt.Sprintf("#id=%d", id)
+	log.Printf("INFO : (%d) Connecting from %s to %s\n", id,
+		"ws://"+hostname, targ)
 	//ws, err := websocket.Dial(targ, "push-notification", targ)
 	ws, err := websocket.Dial(targ, "", targ)
-    err = ws.SetDeadline(time.Now().Add(time.Second * 30))
+	err = ws.SetDeadline(time.Now().Add(time.Second * 30))
 	if err != nil {
 		log.Printf("ERROR: (%d) Unable to open websocket: %s\n",
 			id, err.Error())
@@ -67,23 +83,26 @@ func poundSock(target string, config *Config, cmd, ctrl chan int, id int) (err e
 	}
 	duration, err := time.ParseDuration(config.Sleep)
 	tc := time.NewTicker(duration)
+		msg := fmt.Sprintf("{\"messageType\": \"hello\", "+
+			"\"uaid\": \"%s\", \"channelIDs\":[]}", genToken())
+		_, err = ws.Write([]byte(msg))
+	websocket.Message.Receive(ws, &msg)
 	for {
-        err = ws.SetDeadline(time.Now().Add(time.Second * 5))
-		_, err = ws.Write([]byte("{\"messageType\":\"hello\"}"))
+		err = ws.SetDeadline(time.Now().Add(time.Second * 5))
 		if err != nil {
 			log.Printf("ERROR: (%d) Unable to write ping to websocket %s\n",
 				id, err.Error())
 			cmd <- id
 			return err
 		}
-
-        // do a raw receive from the socket.
-        // Note: ws.Read doesn't like pulling data.
+        ws.Write([]byte("{}"))
+		// do a raw receive from the socket.
+		// Note: ws.Read doesn't like pulling data.
 		var msg string
-        websocket.Message.Receive(ws, &msg)
+		websocket.Message.Receive(ws, &msg)
 
 		//if _, err = ws.Read(msg); err != nil {
-        //
+		//
 		//	log.Printf("WARN : (%d) Bad response %s\n", id, err)
 		//	cmd <- id
 		//	return
@@ -131,30 +150,30 @@ func main() {
 
 	// run as many clients as specified
 	totalClients := config.Clients
-    gov := time.NewTicker(time.Duration(time.Second * 2))
-    for spawned := 0; spawned < totalClients; {
-        select {
-            case <- gov.C:
-                log.Printf("Spawning %d\n", spawned)
-                if spawned < totalClients {
-                    eggs := int(math.Min(1000, float64(totalClients - spawned)))
-	                for cli := 0; cli < eggs; cli++ {
-                        spawn := spawned + cli
-                		ctrl := make(chan int)
-                		chans[spawn] = ctrl
-                		// open a socket to the Target
-                		log.Printf("Spawning %d\n", spawn)
+	gov := time.NewTicker(time.Duration(time.Second * 2))
+	for spawned := 0; spawned < totalClients; {
+		select {
+		case <-gov.C:
+			log.Printf("Spawning %d\n", spawned)
+			if spawned < totalClients {
+				eggs := int(math.Min(1000, float64(totalClients-spawned)))
+				for cli := 0; cli < eggs; cli++ {
+					spawn := spawned + cli
+					ctrl := make(chan int)
+					chans[spawn] = ctrl
+					// open a socket to the Target
+					log.Printf("Spawning %d\n", spawn)
 
-                		go func(spawn int) {
-                			poundSock(config.Target, config, cmd, ctrl, spawn)
-                		}(spawn)
-                    }
-                    spawned = spawned + eggs
-                }
-        }
+					go func(spawn int) {
+						poundSock(config.Target, config, cmd, ctrl, spawn)
+					}(spawn)
+				}
+				spawned = spawned + eggs
+			}
+		}
 
 	}
-    gov.Stop()
+	gov.Stop()
 	tc := time.NewTicker(time.Duration(time.Second * 5))
 	for {
 		select {
@@ -162,7 +181,7 @@ func main() {
 			log.Printf("Exiting %d \n", x)
 			totalClients = runtime.NumGoroutine()
 		case <-tc.C:
-		    log.Printf("Info: Active Clients: %d \n", totalClients)
+			log.Printf("Info: Active Clients: %d \n", totalClients)
 		}
 	}
 }

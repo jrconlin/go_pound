@@ -12,7 +12,7 @@ This requires a config.json file that looks like:
 
     {
     "target": "ws://host:port/ws",
-    "clients": 14000,
+    "clients": 24500,
     "sleep": "10s"
     }
 
